@@ -1,3 +1,15 @@
+# Replay format status
+
+The old action tables below are historical observations from a small set of
+replays. They used the wrong fixed-offset framing for command lengths and
+should not be used as an ID catalogue. The current format and the distinction
+between blueprint IDs, purchase values, and runtime receiver IDs are documented
+in [docs/replay-format.md](docs/replay-format.md). Use
+`tools/replay_inspect.py` to validate replay boundaries before investigating
+opcode semantics.
+
+# Historical action observations
+
 # The action data block has the following format:
 
 Nr.  | TYPE  | LENGTH  | Description

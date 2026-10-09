@@ -1,3 +1,13 @@
+# Historical action observations
+
+This table predates the corrected replay framing. In particular, command
+lengths are inclusive little-endian `u16` values preceded by one bundle-level
+length echo; treating the first length byte as an action field shifts the
+opcode and drops the final payload byte. The numeric values below are samples,
+not stable names across game/mod versions. See the repository's
+[replay-format note](../../../docs/replay-format.md) for the verified framing,
+ID namespaces, and unresolved mappings.
+
 # The action data block has the following format:
 
 Nr.  | TYPE  | LENGTH  | Description
