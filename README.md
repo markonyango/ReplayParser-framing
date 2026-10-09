@@ -23,11 +23,15 @@ u8  custom_type                  # 0xff means no custom payload
 ```
 
 The sender slot is `flags & 0x7f`; the high bit is the serialized command
-process flag. The four context bytes are copied by the game and remain raw;
-the six-file audit corpus has `u16_le(context[0..2]) == 1000 + sender` for
-all 30,373 commands. The next little-endian `u16` usually increments from
-zero per sender, but `recs/1.rec` has one stream reset from 1037 to zero; no
-counter limit or wrap rule is proven. A
+process flag. The four context bytes are copied onto the wire verbatim. Native
+`CommandIssueProxy` construction fills the first `u16` through a virtual
+identity getter and the second through a per-proxy 16-bit counter before
+calling `WorldCommand::SetReserved`; the getter's exact semantic name remains
+unresolved. The six-file audit corpus has
+`u16_le(context[0..2]) == 1000 + sender` for all 30,373 commands. The next
+little-endian `u16` usually increments from zero per sender, but `recs/1.rec`
+has one stream reset from 1037 to zero; no counter limit or wrap rule is
+proven. A
 single receiver is a big-endian packed word
 `(type << 28) | instance_id`. A receiver list has a tagged big-endian count
 (`0x40..`, `0x8000..`, or `0xc0000000..`) followed by little-endian packed

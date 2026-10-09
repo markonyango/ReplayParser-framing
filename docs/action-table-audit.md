@@ -36,9 +36,12 @@ The sender byte uses `sender = flags & 0x7f` and
 `process = (flags >> 7) & 1`. Static analysis ties the high bit to the
 serialized command process field (`WorldCommand::GetCommandProcessType` and
 `WorldCommand::IsQueued`), while the low seven bits follow the engine's player
-base convention. The four context bytes are reserved: samples often show a
-little-endian value near `1000 + sender` followed by a sequence value, but
-that pattern is not a proven semantic split.
+base convention. The four context bytes are wire-raw, but their command-issue
+origin is partly recovered. `CommandIssueProxy` construction at `0xaf318f`
+creates the first reserved `u16` through a virtual identity getter and the
+second through a per-proxy counter; the issue method copies both words, calls
+`WorldCommand::SetReserved`, and increments that counter. The getter's exact
+game semantic name and any absolute counter limit remain unresolved.
 
 A single receiver is a big-endian packed word:
 
@@ -103,8 +106,17 @@ A strict scan of all **30,373 commands** in the six-file audit corpus found
 `u16_le(body[2..4]) == 1000 + (body[1] & 0x7f)` for every command. The next
 reserved `u16` generally starts at zero and increases per sender, but
 `recs/1.rec` has one sender stream reset from 1037 to zero. The serializer
-only copies these four bytes; the supplied evidence proves no 65,536-command
-limit or wraparound rule.
+only copies these four bytes. The native origin explains the observed pair as
+identity-getter output plus per-proxy sequence state, while the supplied
+evidence proves no 65,536-command limit or wraparound rule.
+
+The relevant imports are `WorldCommand` constructor `0xf880dc` and
+`SetReserved` `0xf880e4`. The setter xrefs are `0x41ed42` (reader-side
+reconstruction) and `0xaf3138` (command-issue proxy); `0x985cf7` is a
+constructor call and must not be used as a setter xref. The RTTI at
+`0xaf318f` identifies the proxy as `CommandIssueProxy`, and its issue method
+reads the virtual identity result into the first word, reads/increments the
+16-bit counter for the second, then stores the four-byte reserved value.
 
 This synthetic 18-byte command exercises a two-receiver list and the no-custom
 sentinel:
@@ -175,8 +187,9 @@ and the custom field is variable length. Consequently:
 
 * old row 2 is the wire opcode and is structurally confirmed;
 * old row 3 is the sender/process flags byte, not a player-location ID;
-* old rows 4--7 are one four-byte reserved context value, not independently
-  confirmed player ID/counter fields; and
+* old rows 4--7 are one four-byte reserved context value. Its identity-getter
+  plus per-proxy-counter origin is now proven, but the getter's game semantic
+  name remains unresolved; and
 * old rows 8 onward cannot be assigned fixed meanings because receiver count,
   receiver list width, custom tag, and custom length vary by command.
 
@@ -258,7 +271,7 @@ they still do not make the byte a stable enum across builds.
 | ---: | --- | --- |
 | 23 | `0xa7515e..0xa752ba` and `0xaf4913..0xaf49fb` call `WorldDoCommandEntities`/`WorldDoCommandEntity` with `SingleTargetData` or `DualTargetData`; target fields are reset from squad/entity values. | **Corrected:** this is a target-bearing entity command in this build. The supplied call paths contain no building/vehicle-specific method proving “exit building”. |
 | 43 | `0x8d13ae` emits the byte for either the owner squad or entity after clearing an owner-pointer queue; `0x96b921` emits it after opcode `0x2a` and immediately changes entity state. Additional squad callers occur at `0x9dc409`, `0x9e6334`, `0xa71e7a`, and `0xb75e54`. | **Partly confirmed:** a stop/cancel-like command path is native-confirmed, but no exported symbol names the byte “stop move”; keep the old name as build-local. |
-| 44 | `0x7eabbe` follows `SquadStateProcessor::DefaultCommand`, reads `ConstTarget::GetPosition`, and emits the command through `WorldDoCommandSquad`; other squad callers occur at `0xa7003f` and `0x9de480`. | **Confirmed for this build as a position/movement command path.** The opcode remains version-specific. |
+| 44 | At `0x7eab49..0x7eabd1`, the caller prepares a `Vector3f`, invokes imported `GetSquadStateProcessor` and `SquadStateProcessor::DefaultCommand`, then pushes squad, player, `false`, and literal `0x2c` into `WorldDoCommandSquad`; a returned command is queued with the same vector. Other callers occur at `0xa7003f` and `0x9de480`. | **Confirmed in this build as the squad movement/default-position order for this path.** Other 0x2c call sites may represent different state paths; the opcode remains version-specific. |
 | 48 | `0x985f20`, `0x9a81f8`, `0x9cadf7`, `0x9dc3cb`, `0xa10fd5`, `0xa7024b`, and `0xb7081d` emit the byte through squad constructors. The surrounding paths build target data or squad groups, but no native name “attack” is retained. | **Wire and target context confirmed; gameplay name remains unverified.** |
 | 52 | `0x9395c6` emits the byte after constructing a squad group and `FlagTargetBoolData`; the follow-up codec writer at `0x941340` writes custom tag `7`. Similar target paths occur at `0xa0e515` and `0xa6ffcd`. | **Corrected:** target-plus-flag construction is confirmed; “attack move” is not proven by the stripped symbols. |
 | 56 | `0x9ca599`, `0x9dbbf5`, and `0xaf4cf4` emit the byte after constructing target data from entity/squad objects. | **Corrected:** entity/squad target context is confirmed; no vehicle/building transition call is present in the searched callers. |
