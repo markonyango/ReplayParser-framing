@@ -24,9 +24,9 @@ u8  custom_type                  # 0xff means no custom payload
 
 The sender slot is `flags & 0x7f`; the high bit is the serialized command
 process flag. The four context bytes are copied by the game and remain raw;
-in the five checked-in replays, their first little-endian `u16` equals
-`1000 + sender` for all 20,434 commands. The next little-endian `u16` usually
-increments from zero per sender, but one sample resets from 1037 to zero; no
+the six-file audit corpus has `u16_le(context[0..2]) == 1000 + sender` for
+all 30,373 commands. The next little-endian `u16` usually increments from
+zero per sender, but `recs/1.rec` has one stream reset from 1037 to zero; no
 counter limit or wrap rule is proven. A
 single receiver is a big-endian packed word
 `(type << 28) | instance_id`. A receiver list has a tagged big-endian count
@@ -38,6 +38,17 @@ Custom lengths below `0x80` occupy one byte; larger lengths use
 `((first & 0x7f) << 8) | second`. Type `0xff` means no custom payload. Generic
 type-5 decoding proves only a four-byte unsigned data path; custom values are
 opcode- and version-dependent. Unknown tags and payloads stay opaque.
+
+The native construction audit confirms additional build-local context. The
+type-5/length-4 forms used by opcodes 3, 5, 15, 49, 50, and 51 carry a full
+little-endian `u32`: the observed Tyranid bytes `05 01 00 00` equal 261, and
+the observed tier bytes `be 01 00 00` equal 446. DOW2 readers branch on tags
+25 and 26 for packed ability/target readers, and opcode 78's type-15/length-35
+form contains a leading word, two float triples, and a seven-byte tail. These
+facts establish widths and context in the inspected build; they do not create
+a universal blueprint/name catalogue. See the [semantic and constructor
+audit](docs/action-table-audit.md) for the opcode call sites and evidence
+boundary.
 
 The parser's complete structural view is `ReplayInfo.commands`. The older
 `ReplayInfo.actions` view is filtered for compatibility and omits some opcode

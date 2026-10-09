@@ -96,11 +96,12 @@ The old “unit ID” byte would have exposed only `0x0c`, the low byte of the
 runtime receiver instance. That is why the same apparent unit ID changes
 across sessions and versions.
 
-A strict scan of all 20,434 commands in the five checked-in replays found
+A strict scan of all **30,373 commands** in the six-file audit corpus found
 `u16_le(body[2..4]) == 1000 + (body[1] & 0x7f)` for every command. The next
-reserved `u16` generally starts at zero and increases per sender, but one
-sample resets from 1037 to zero. The serializer only copies these four bytes;
-the supplied evidence proves no 65,536-command limit or wraparound rule.
+reserved `u16` generally starts at zero and increases per sender, but
+`recs/1.rec` has one sender stream reset from 1037 to zero. The serializer
+only copies these four bytes; the supplied evidence proves no 65,536-command
+limit or wraparound rule.
 
 This synthetic 18-byte command exercises a two-receiver list and the no-custom
 sentinel:
@@ -134,7 +135,7 @@ proves only the generic payload contract, not the old gameplay label.
 | 15 | Upgrade building | `(5,4)` | shape observed; gameplay label unverified |
 | 23 | Exit building | `none` | opcode observed; gameplay label unverified |
 | 43 | Stop move | `none`, `(1,1)` | shapes observed; gameplay label unverified |
-| 44 | Move | `(1,3)`, `(1,5)`, `(1,13)`, `(3,26)`, `(6,17)`, `(8,30)`, `(18,17)` | shapes observed; gameplay label unverified |
+| 44 | Move | `(1,3)`, `(1,5)`, `(1,13)`, `(3,26)`, `(6,17)`, `(8,30)`, `(18,17)` | native construction is movement-shaped; see dispatch audit; label is build-local |
 | 47 | Capture point | `(1,5)` | shape observed; gameplay label unverified |
 | 48 | Attack | `(1,3)`, `(1,5)`, `(1,13)` | shapes observed; gameplay label unverified |
 | 49 | Reinforce unit | `(5,4)` | shape observed; gameplay label unverified |
@@ -189,6 +190,34 @@ decoding are `(1,1)`, `(1,3)`, `(1,5)`, `(1,13)`, `(3,26)`, `(5,4)`, `(6,17)`,
 `(32,84)` claims were not reproduced as strict custom type/length pairs in
 the six-file corpus and remain incomplete observations.
 
+## Archive and semantic audit corrections
+
+The archive audit checked the six replay identities against the pinned DOW2 and
+SimEngine builds. It supports several context labels while keeping the actual
+attribute name lookup unresolved:
+
+* Opcodes 3, 5, 15, 49, 50, and 51 all use the observed type-5/length-4
+  envelope in the corpus. Their payload is a full little-endian `u32`; it is
+  not a one-byte item ID. The Tyranid sample `05 01 00 00` is `261`, and the
+  Space Marine/Ordo Malleus tier sample `be 01 00 00` is `446`, not `190`.
+  The purchase, upgrade, reinforce, and cancellation contexts are repeatable
+  sample contexts, but no supplied archive proves a universal name-to-value
+  table for them.
+* Opcode 53 uses the observed type-25/26/27/28 forms and opcode 85 uses the
+  observed type-25/26/27/28/29 forms. DOW2 readers at `0x814350` and
+  `0x814400` branch on custom tags 25 and 26 and then consume command-owned
+  payload pointers and lengths. This confirms tag selectors and packed-reader
+  boundaries, while the ability names remain context labels.
+* Opcode 78's type-15/length-35 payload is emitted for a base receiver and
+  contains a leading four-byte field, two visible float triples, and a
+  seven-byte tail. The geometry layout is proven by repeated samples; the
+  leading and tail fields and the displayed building name are not.
+
+The archive names and old “Item ID” table are therefore useful annotations,
+not proof that the integer is comparable between builds. A name-to-ID claim
+requires the exact attribute archive and catalog/load order that created the
+replay. The available SGA overlays do not provide that proof.
+
 ## Evidence limits
 
 The analysed writer proves the byte-level envelope and generic codecs. It does
@@ -202,3 +231,34 @@ session's runtime group creation order.
 See the command-codec research for the broader custom-tag dispatch inventory
 and the replay-format research for runtime ID allocation evidence when those
 documents are available in the repository.
+
+## Native command-construction audit
+
+The generic serializer cannot name an action, but the analysed DOW2 executable
+also contains callers that construct commands with literal opcode arguments.
+Those callers are stronger evidence than a replay-only correlation. They show
+which engine path emits a byte and which target/codec objects are assembled;
+they still do not make the byte a stable enum across builds.
+
+| opcode | construction evidence in the analysed DOW2 build | conclusion for the old label |
+| ---: | --- | --- |
+| 23 | `0xa7515e..0xa752ba` and `0xaf4913..0xaf49fb` call `WorldDoCommandEntities`/`WorldDoCommandEntity` with `SingleTargetData` or `DualTargetData`; target fields are reset from squad/entity values. | **Corrected:** this is a target-bearing entity command in this build. The supplied call paths contain no building/vehicle-specific method proving “exit building”. |
+| 43 | `0x8d13ae` emits the byte for either the owner squad or entity after clearing an owner-pointer queue; `0x96b921` emits it after opcode `0x2a` and immediately changes entity state. Additional squad callers occur at `0x9dc409`, `0x9e6334`, `0xa71e7a`, and `0xb75e54`. | **Partly confirmed:** a stop/cancel-like command path is native-confirmed, but no exported symbol names the byte “stop move”; keep the old name as build-local. |
+| 44 | `0x7eabbe` follows `SquadStateProcessor::DefaultCommand`, reads `ConstTarget::GetPosition`, and emits the command through `WorldDoCommandSquad`; other squad callers occur at `0x9a7003` and `0x9de480`. | **Confirmed for this build as a position/movement command path.** The opcode remains version-specific. |
+| 48 | `0x985f20`, `0x9a81f8`, `0x9cadf7`, `0x9dc3cb`, `0xa10fd5`, `0xa7024b`, and `0xb7081d` emit the byte through squad constructors. The surrounding paths build target data or squad groups, but no native name “attack” is retained. | **Wire and target context confirmed; gameplay name remains unverified.** |
+| 52 | `0x9395c6` emits the byte after constructing a squad group and `FlagTargetBoolData`; the follow-up codec writer at `0x941340` writes custom tag `7`. Similar target paths occur at `0xa0e515` and `0xa6ffcd`. | **Corrected:** target-plus-flag construction is confirmed; “attack move” is not proven by the stripped symbols. |
+| 56 | `0x9ca599`, `0x9dbbf5`, and `0xaf4cf4` emit the byte after constructing target data from entity/squad objects. | **Corrected:** entity/squad target context is confirmed; no vehicle/building transition call is present in the searched callers. |
+| 58 | `0xaf4b2c`, `0xaf4b89`, `0xaf4be4`, and `0xaf4c1b` emit the byte for squad groups after `DualTargetData`/`SingleTargetData` construction. | **Corrected:** squad target context is confirmed; “exit vehicle” is not proven by these callers. |
+| 61 | `0xb5f0e7` checks input key `0x85`, filters eligible squads, and emits the byte with `WorldDoCommandSquads`; target/squad paths also occur at `0x9de5f2` and `0x9e04ac`. | **Strong build-local support for a retreat/selected-squad command**, but the stripped binary has no semantic method name; preserve the numeric opcode and raw fields. |
+| 70 | `0xb70cd3` filters squads by property/state predicates and emits the byte with `WorldDoCommandSquads`. | **Corrected:** filtered squad command is confirmed; no force-melee operation is identified in the recovered call path. |
+| 71 | `0xb76ae1` checks `SquadController::QI(..., 8)` and a state helper for each squad before emitting the byte with `WorldDoCommandSquads`. | **Corrected:** a squad-state toggle-like path is confirmed; “toggle stance” is a context label, not a recovered enum name. |
+
+This audit searched the direct `WorldDoCommand*` imports, the
+`WorldCommand::DoCommand`/`BaseState::ProcessCommand` call chain, and the
+`WorldCommandWriteStream::SetCustomData` callers in the pinned DOW2 build.
+The game passes the opcode into generic constructors, then dispatches through
+virtual controller/state methods. No complete switch mapping byte values to
+human names survived in the supplied symbols or disassembly. The table above
+therefore records positive constructor evidence where available and states the
+exact boundary where semantic recovery stops; it does not turn an unresolved
+label into a universal “unknown” claim for every other game or mod version.
