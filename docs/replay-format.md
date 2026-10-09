@@ -239,3 +239,9 @@ These remain open and should not be guessed by a parser:
 The checksum and format version should be exposed to callers, and numeric IDs
 should be presented with their namespace and source build rather than treated
 as stable names.
+
+The command-specific custom-data codec and its remaining semantic limits are
+catalogued in [`command-codec.md`](command-codec.md). The inventory helper
+[`tools/replay_command_inventory.py`](../tools/replay_command_inventory.py)
+counts observed opcode/custom combinations without assigning version-specific
+gameplay names.
