@@ -143,7 +143,62 @@ The complete dispatch behavior recoverable from those two helpers is:
 with that tag cannot exist. The replay inventory demonstrates tags 12, 15, 16,
 18, 19, 25--29, and 39, so a decoder must retain unknown/custom-handler
 payloads rather than applying the generic table blindly.
-3. The typed `SimCommandData` classes expose pack/unpack methods. Their static
+
+The boundary between structural decoding and semantic decoding is therefore:
+
+| wire area | supported structural decode | semantic coverage | required fallback |
+| --- | --- | --- | --- |
+| command envelope | opcode, sender/process byte, four reserved bytes, receiver field, custom type/length | no complete opcode dispatch recovered | retain every byte and expose the opcode as an integer |
+| receiver word | `raw`, `type = raw >> 28`, `instance = raw & 0x0fffffff` | types 0=player, 1=entity, 2=squad are proven in SimEngine getters | keep unknown type nibbles raw; do not call `instance` a blueprint ID |
+| custom 1--6 | generic target/flag contracts listed above | byte layout only; gameplay meaning remains opcode-specific | preserve raw payload alongside any typed view |
+| custom 8--9 | flag+dual-target and flag+position contracts | byte layout only; no global ability/unit names | preserve raw payload alongside any typed view |
+| custom 7 | framing and raw length/payload | generic helpers deliberately reject it; DOW2 has a writer call site | opaque custom payload |
+| custom 12, 15--19, 25--29, 39 | framing and raw length/payload | caller-specific or unresolved; 25/26 take local DOW2 branches | opaque custom payload until an opcode/version handler is supplied |
+| all other custom values | framing and raw length/payload | no generic helper arm recovered | opaque custom payload |
+| opcode byte | one-byte value for every command | 27 values occur in the six-file corpus; no complete enum | retain the byte and avoid inferred action names |
+
+The masks that are proven by the native code are intentionally small. For a
+sender/process byte, `sender = byte & 0x7f` and `process = (byte >> 7) & 1`.
+For the internal `SimCommandData` discriminator, `kind = byte & 0x7f` and
+`bool = (byte >> 7) & 1`; only low kinds 2, 3, 4, and 5 have recovered
+dispatch arms. For a packed receiver, the writer places the namespace in the
+top nibble and the receiver instance in the low 28 bits. The generic receiver
+decoder masks the namespace to two bits for its known paths, but preserving the
+original nibble is safer for a replay parser. No additional bitfield inside
+the three target words has been established. In particular, the third target
+word must not be presented as a blueprint, purchase, or unit ID.
+
+The custom length has its own framing rule and is not a target bitfield: values
+below `0x80` use one byte; otherwise the length is
+`((first & 0x7f) << 8) | second`, with the high bit serving only as the
+two-byte marker.
+
+## Using the recovered fields
+
+The dependency-free tools are intended to be the first pass over a replay:
+
+```text
+python3 tools/replay_inspect.py recs/purchases_SM.rec
+python3 tools/replay_command_inventory.py recs/purchases_SM.rec
+```
+
+Both commands emit JSON structural summaries. The inventory reports opcode,
+custom type/length, and receiver-kind counts without publishing payload bytes.
+The Rust parser emits a JSON `commands` array containing every decoded command;
+each command has `opcode`, `sender_flags`, `sender_slot`, `process_type`,
+`raw_context`, `receivers`, `custom_type`, `custom_length`, and `custom_data`.
+`data` remains the complete command body for byte-for-byte consumers. The
+legacy `actions` array is filtered for compatibility and should not be used as
+the complete command stream.
+
+For a local JSON dump, run `cargo run -p parser_lib -- path/to/file.rec`.
+Consumers adding typed views should retain the raw command and make the typed
+fields conditional on both custom type and opcode/version. A type-5 four-byte
+value, for example, is a command-context token; it is not a cross-version
+blueprint or unit identifier. Unknown tags and unknown opcodes should remain
+visible in JSON rather than being dropped.
+
+The typed `SimCommandData` classes expose pack/unpack methods. Their static
    call sequences establish the following payload composition, with primitive
    values written in the engine's little-endian stream format:
 
