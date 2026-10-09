@@ -48,6 +48,24 @@ decoder path beginning at `0x41ebcc`. The corresponding SimEngine exports are
 `WorldCommand::SetCustomDataRaw`, `SimCommandData::GetUnsignedFromCustom`, and
 `SimCommandData::GetTargetFromCustom`.
 
+The SimEngine constructors also make the important object offsets explicit:
+
+| object offset | native field |
+| ---: | --- |
+| `+0x00` | command opcode (`u32` in memory; one byte on the replay wire) |
+| `+0x04` | command process/queued value |
+| `+0x08` | constructor-initialized zero; not serialized by the writer |
+| `+0x0c` | sender `Player*` |
+| `+0x10` | receiver vector storage |
+| `+0x40` | custom payload pointer |
+| `+0x44` | custom payload length |
+| `+0x48` | custom type (`0xff` sentinel) |
+| `+0x49` | trusted boolean; not serialized by the writer |
+
+This layout explains why a replay decoder should preserve the wire opcode as a
+byte and should not treat the in-memory command word or `trusted` state as
+additional replay fields.
+
 ## SimCommandData codec
 
 SimEngine's `SimCommandData` helpers make a useful distinction that was
