@@ -44,8 +44,14 @@ type-5/length-4 forms used by opcodes 3, 5, 15, 49, 50, and 51 carry a full
 little-endian `u32`: the observed Tyranid bytes `05 01 00 00` equal 261, and
 the observed tier bytes `be 01 00 00` equal 446. DOW2 readers branch on tags
 25 and 26 for packed ability/target readers, and opcode 78's type-15/length-35
-form contains a leading word, two float triples, and a seven-byte tail. These
-facts establish widths and context in the inspected build; they do not create
+form is written by `0x941440 -> 0x812a40` as observed segments of
+`4 + 12 + 12 + 1 + 4 + 2` bytes, with packed entity/squad portions handled by
+generic helpers. The replay samples expose two float triples and a seven-byte
+tail within that form. Native cancellation handlers at `0x437d32` and
+`0x43834c` walk twelve-byte queue entries, resolve stored `u32` keys through
+`0x41ea96`, notify cancellation, destroy commands, and compact the queue; the
+available code does not directly tie opcode 5/51 custom values to those keys.
+These facts establish widths and context in the inspected build; they do not create
 a universal blueprint/name catalogue. See the [semantic and constructor
 audit](docs/action-table-audit.md) for the opcode call sites and evidence
 boundary.

@@ -11,8 +11,11 @@ Disposition summary: all 27 original rows have a structurally valid opcode
 number, 25 occur in the six-file corpus, and 2 (1 and 98) do not occur there.
 The generic writer confirms the opcode byte and envelope fields, but confirms
 none of the 27 old gameplay names as a universal semantic enum. The fixed
-field table is therefore corrected at the wire level; the named examples are
-retained as historical, unverified observations.
+field table is therefore corrected at the wire level. Nine rows have positive
+purchase/ability/building handler context, opcodes 44 and 61 have
+build-local movement/selected-squad construction evidence, and opcode 43 has
+partial stop/cancel-like evidence. The remaining 15 rows have no recovered
+name-level handler proof; all names remain version-scoped annotations.
 
 ## Correct wire model
 
@@ -129,7 +132,7 @@ proves only the generic payload contract, not the old gameplay label.
 | ---: | --- | --- | --- |
 | 1 | Ability on placeable object | not observed | label unverified; no handler proof in supplied evidence |
 | 3 | Build unit | `(5,4)` | opcode and type-5/length-4 shape observed; gameplay label unverified |
-| 5 | Cancel unit or wargear | `(5,4)` | shape observed; cancellation label unverified |
+| 5 | Cancel unit or wargear | `(5,4)` | type-5 `u32` shape observed; native cancellation queue-key handling is proven, but no direct opcode-5-to-key field cross-reference was recovered |
 | 9 | Attack from placeable object | `(1,3)` | shape observed; gameplay label unverified |
 | 11 | Set rally point | `(1,3)`, `(1,13)` | shapes observed; gameplay label unverified |
 | 15 | Upgrade building | `(5,4)` | shape observed; gameplay label unverified |
@@ -140,7 +143,7 @@ proves only the generic payload contract, not the old gameplay label.
 | 48 | Attack | `(1,3)`, `(1,5)`, `(1,13)` | shapes observed; gameplay label unverified |
 | 49 | Reinforce unit | `(5,4)` | shape observed; gameplay label unverified |
 | 50 | Purchase wargear | `(5,4)` | shape observed; purchase label unverified |
-| 51 | Cancel wargear purchase | `(5,4)` | shape observed; cancellation label unverified |
+| 51 | Cancel wargear purchase | `(5,4)` | type-5 `u32` shape observed; native cancellation queue-key handling is proven, but no direct opcode-51-to-key field cross-reference was recovered |
 | 52 | Attack move | `(1,13)`, `(6,17)`, `(19,30)` | shapes observed; gameplay label unverified |
 | 53 | Ability on unit | `(1,3)`, `(1,5)`, `(1,13)`, `(25,5)`, `(26,9)`, `(26,11)`, `(26,19)`, `(27,32)`, `(28,13)`, `(28,23)`, `(28,71)` | shapes observed; gameplay label unverified |
 | 56 | Enter building or vehicle | `(1,3)`, `(1,5)` | shapes observed; gameplay label unverified |
@@ -208,10 +211,21 @@ attribute name lookup unresolved:
   `0x814400` branch on custom tags 25 and 26 and then consume command-owned
   payload pointers and lengths. This confirms tag selectors and packed-reader
   boundaries, while the ability names remain context labels.
-* Opcode 78's type-15/length-35 payload is emitted for a base receiver and
-  contains a leading four-byte field, two visible float triples, and a
+* Opcode 78's type-15/length-35 payload is emitted for a base receiver. The
+  type-15 writer at `0x941440` calls `0x812a40`; that helper serializes the
+  observed 35-byte form as `4 + 12 + 12 + 1 + 4 + 2` bytes (the last two
+  pieces are variable-width packed entity/squad fields in the generic helper).
+  The replay samples additionally show two visible float triples and a
   seven-byte tail. The geometry layout is proven by repeated samples; the
   leading and tail fields and the displayed building name are not.
+
+* The runtime cancellation handlers at `0x437d32` and `0x43834c` walk a
+  twelve-byte command queue, pass each stored `u32` key through `0x41ea96`,
+  notify `WorldCommandManager::NotifyCommandCancel`, destroy the command, and
+  compact the queue. This proves a runtime queue-key/cancellation mechanism.
+  The available callers do not directly establish that opcode 5 or 51's
+  custom type-5 `u32` is that key, so the replay-to-handler association stays
+  unresolved.
 
 The archive names and old “Item ID” table are therefore useful annotations,
 not proof that the integer is comparable between builds. A name-to-ID claim
