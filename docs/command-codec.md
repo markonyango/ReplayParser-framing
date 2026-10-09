@@ -35,6 +35,13 @@ sample corpus.
   set and carries length bits 14..8. Payload bytes are copied exactly. The
   serializer does not write the `trusted` flag.
 
+The sender high bit is backed by a native field rather than inferred solely
+from replay bytes: `WorldCommand::GetCommandProcessType` returns object offset
+`+0x04`, and `WorldCommand::IsQueued` returns true exactly when that field is
+`1`. The writer emits that same value as the sender byte's high bit. This is
+the evidence for the commonly called *queue/process flag*; other queue state
+is held by `WorldCommandQueue` and is not serialized in this command body.
+
 The static writer/reader evidence is at DOW2 virtual addresses `0x41e8da`
 through `0x41ed80`, receiver helpers `0x41e61b` and `0x41e5c8`, and the
 decoder path beginning at `0x41ebcc`. The corresponding SimEngine exports are
