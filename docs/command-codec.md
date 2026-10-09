@@ -10,10 +10,47 @@ namespace. It is separate from the internal data-kind byte used by
 The framing is described in [`replay-format.md`](replay-format.md). The
 dependency-free [`tools/replay_command_inventory.py`](../tools/replay_command_inventory.py)
 reports opcode, custom type, payload length, and receiver-kind combinations
-without publishing payloads. For the five checked samples it observes custom
-types including 1, 3, 5, 6, 8, 12, 15, 16, 18, 19, 25--29, and 39. Those are
+without publishing payloads. The five checked repository samples observe 26
+distinct `(custom_type, payload_length)` pairs. A sixth local replay (header
+version 10320, SHA-256 prefix `18d36894`) adds opcodes 9 and 58 but no new
+custom type/length pair. Across those six distinct files the observed custom
+types include 1, 3, 5, 6, 8, 12, 15, 16, 18, 19, 25--29, and 39. These are
 observations, not a complete enum: an absent type may simply not occur in the
 sample corpus.
+
+The six-file corpus contains 27 opcode values. The inventory's complete
+opcode-to-observed custom shape map is below; `none` means custom type `0xff`.
+This is a corpus map, not a semantic opcode enum.
+
+| opcode | observed `(custom_type, payload_length)` |
+| ---: | --- |
+| 2 | none |
+| 3 | (5,4) |
+| 5 | (5,4) |
+| 9 | (1,3) |
+| 11 | (1,3), (1,13) |
+| 13 | (25,5) |
+| 15 | (5,4) |
+| 23 | none |
+| 43 | none, (1,1) |
+| 44 | (1,3), (1,5), (1,13), (3,26), (6,17), (8,30), (18,17) |
+| 47 | (1,5) |
+| 48 | (1,3), (1,5), (1,13) |
+| 49 | (5,4) |
+| 50 | (5,4) |
+| 51 | (5,4) |
+| 52 | (1,13), (6,17), (19,30) |
+| 53 | (1,3), (1,5), (25,5), (26,9), (26,11), (26,19), (27,32), (28,13), (28,23), (28,71) |
+| 56 | (1,3), (1,5) |
+| 58 | none |
+| 61 | none, (1,5) |
+| 70 | (1,1), (1,3), (1,5) |
+| 71 | (5,4) |
+| 78 | (15,35) |
+| 85 | (25,5), (26,9), (26,19), (27,32), (28,59), (28,71), (29,40), (29,88) |
+| 89 | (16,35) |
+| 94 | (39,16) |
+| 96 | (12,14) |
 
 ## Wire facts
 
@@ -75,14 +112,37 @@ missing from the old action tables:
    analysed build, `GetUnsignedFromCustom` switches on custom types 5 through
    9. Type 5 takes a four-byte unsigned value directly; this is independently
    visible in replay samples where type 5 has length four and little-endian
-   values such as `bf 00 00 00`. The remaining cases pass through typed
-   unpackers and are not globally meaningful without the calling opcode.
+   values such as `bf 00 00 00`. Types 6, 8, and 9 use typed unpackers, while
+   type 7 deliberately returns failure. None of these values is globally
+   meaningful without the calling opcode.
 2. `GetTargetFromCustom` has a separate switch for target-bearing custom types
    (the call site explicitly special-cases types 25 and 26). Its result is a
    `Target` structure, not a receiver word. A target may therefore identify a
    location or another simulation object while the command receiver identifies
    the controller that receives the command. The complete gameplay meaning of
    each target case is not established by the generic helper alone.
+
+The complete dispatch behavior recoverable from those two helpers is:
+
+| custom tag | `GetTargetFromCustom` | `GetUnsignedFromCustom` | proven data path |
+| ---: | --- | --- | --- |
+| 1 | success | reject | single target |
+| 2 | success | reject | single target + bool |
+| 3 | success | reject | dual target |
+| 4 | success | reject | dual target + bool |
+| 5 | reject | success | direct `u32` flag |
+| 6 | success | success | flag + target |
+| 7 | reject | reject | unsupported by these generic helpers |
+| 8 | success | success | flag + dual target |
+| 9 | reject | success | flag + position |
+| 10--24 | reject | reject | no generic helper arm located |
+| 25--26 | caller-specific | reject | target-bearing handlers special-case these tags |
+| 27--255 | reject | reject | preserve raw payload; handler-specific or unknown |
+
+“Reject” here means the helper returns false; it does not mean that a command
+with that tag cannot exist. The replay inventory demonstrates tags 12, 15, 16,
+18, 19, 25--29, and 39, so a decoder must retain unknown/custom-handler
+payloads rather than applying the generic table blindly.
 3. The typed `SimCommandData` classes expose pack/unpack methods. Their static
    call sequences establish the following payload composition, with primitive
    values written in the engine's little-endian stream format:
