@@ -204,3 +204,69 @@ purchase tokens, ability selection, positions, and target semantics remain
 opcode- and version-specific. A safe parser should preserve the opcode,
 reserved bytes, custom type, custom length, raw payload, receiver type, and
 receiver instance even when it cannot assign a gameplay name.
+
+## Writer-side dispatch and opaque cases
+
+The native writer does not contain a central `custom_type -> Pack` table. The
+DOW2 code constructs a `ByteStreamAdapter`, sets the command object's `+0x48`
+custom type, and calls `WorldCommand::SetCustomData` through the DOW2 import at
+`0xf880c0`. `WorldCommandWriteStream` then frames that already-built byte
+buffer. This is why the generic SimEngine helper switches are useful for
+decoding known data classes, but cannot be used as an enum for every custom
+type found in replays.
+
+The following literal assignments are direct writer-side evidence in the
+analysed DOW2 build. The second address is the nearby `SetCustomData` call;
+the addresses are RVA-style virtual addresses from the disassembly:
+
+| custom type | assignment | nearby write call | evidence |
+| ---: | ---: | ---: | --- |
+| 1 | `0x7ed544` | `0x7ed56f` | caller builds a single-target-shaped buffer |
+| 2 | `0x9413df` | `0x94140e` | caller-specific builder |
+| 3 | `0x9412df` | `0x94130e` | caller-specific builder |
+| 5 | `0x7ed4c4` | `0x7ed4ef` | four-byte flag/unsigned builder |
+| 6 | `0x9411cf` | `0x9411fe` | caller-specific builder |
+| 7 | `0x941364` | `0x94138f` | written by DOW2 although generic readers reject it |
+| 8 | `0xb7fe4f` | `0xb7fe7e` | caller-specific builder |
+| 12 | `0xa02c6f` | `0xa02c9e` | `SquadCustomData::Pack` call site |
+| 25 | `0x8768a4` | `0x8768ce` | local builder at `0x814180` |
+| 41 | `0x41e57f` | `0x41e5a2` | local builder |
+
+This list is a set of call-site facts, not a semantic tag enum. It proves that
+type 7 is a valid writer-side value even though neither generic helper
+decodes it. It also shows that type 25 is produced by a local DOW2 builder.
+The analysed writer has no immediate type-9 assignment adjacent to a
+`SetCustomData` call; type 9 is nevertheless a real generic **reader** arm in
+`GetUnsignedFromCustom`, where it uses the flag-position unpacker. Types
+0/26--29 and 39 occur in object initialization or replay samples, but no
+single central pack dispatch for them was recovered.
+
+Types 25 and 26 are explicitly handled outside the generic helpers. At DOW2
+`0x814350`, the command's `+0x48` is compared against 25 and 26: type 25 is
+sent to local routine `0x7ecc40`, type 26 to local routine `0x7ecd00`, and
+other values fall through to `GetUnsignedFromCustom`. At `0x814418`, type 26
+again takes the local `0x7ecd00` path while other values call
+`GetTargetFromCustom`. These branches prove caller-specific target handling;
+they do not prove the fields or gameplay names of the 25/26 payloads. The
+observed type-26 lengths (9, 11, and 19 bytes) must therefore remain raw until
+that local routine and its callers are decoded.
+
+The generic packer has a second, unrelated discriminator inside the payload.
+At SimEngine `0x10022780`, it writes `kind | (bool ? 0x80 : 0)` from a
+`SimCommandData` object, and at `0x100228a0` the reader masks the high bit and
+dispatches the low seven bits. Low values 2, 3, 4, and 5 select the target,
+position, entity, and squad paths respectively. For the plain target path the
+following data is three little-endian 32-bit words, so the internal kind byte
+plus those 12 bytes explains the observed 13-byte target payload. The high
+bit is proven as a boolean carrier; the remaining target metadata words and
+the meaning of any other low-bit value are not proven by this dispatch. A
+decoder should retain the discriminator and all words rather than treating
+the third word as a blueprint or unit ID.
+
+The generic unpack switch has no arm for an unknown low-bit kind and returns
+without a typed result. That is a useful implementation boundary: the parser
+can fully decode the framing and the nine generic custom contracts above, but
+must expose an opaque payload for caller-specific tags (including 7, 12,
+15--19, 25--29, 39, and any future value) unless an opcode/version-specific
+handler is supplied. No RTTI or virtual stream metadata in the analysed
+exports provides the missing custom-tag-to-handler mapping.
